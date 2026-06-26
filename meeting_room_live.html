@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>会議室予約表</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif;background:#f5f5f5;padding:1rem}
+.header-row{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:.6rem;gap:8px}
+h1{font-size:16px;font-weight:500;color:#333;line-height:1.4}
+.cal-btn{background:#fff;border:1px solid #ccc;border-radius:6px;padding:5px 10px;cursor:pointer;font-size:13px;color:#555;display:flex;align-items:center;gap:5px;white-space:nowrap}
+.cal-btn:hover{background:#f0f0f0}
+.toolbar{display:flex;align-items:center;gap:8px;margin-bottom:0.4rem}
+.nav-btn{background:#fff;border:1px solid #ccc;border-radius:6px;padding:5px 14px;cursor:pointer;font-size:12px;color:#333}
+.nav-btn:hover{background:#f0f0f0}
+.date-label{font-size:15px;font-weight:500;color:#333;min-width:130px;text-align:center}
+.hint{font-size:11px;color:#999;margin-bottom:0.5rem}
+.loading{font-size:12px;color:#185FA5;margin-bottom:0.5rem;min-height:16px}
+.table-wrap{overflow-x:auto;background:#fff;border-radius:8px;border:1px solid #ddd;user-select:none}
+table{width:100%;border-collapse:collapse;table-layout:fixed}
+th,td{border:1px solid #e0e0e0;text-align:center}
+th.tc,td.tc{width:44px;color:#aaa;font-size:10px;text-align:right;padding-right:5px;background:#f9f9f9}
+th.dc{font-weight:500;color:#555;background:#f9f9f9;font-size:10px;padding:6px 2px;line-height:1.4}
+td.slot{height:14px;vertical-align:middle;padding:0;cursor:pointer;position:relative}
+td.slot.free{background:#fff}
+td.slot.free:hover{background:#E6F1FB}
+td.slot.selecting{background:#B5D4F4}
+td.slot.booked{background:#E6F1FB;cursor:pointer}
+td.slot.booked:hover{background:#B5D4F4}
+td.slot.block-top{border-top:2px solid #185FA5!important}
+td.slot.block-bottom{border-bottom:2px solid #185FA5!important}
+td.slot.block-side{border-left:2px solid #185FA5!important;border-right:2px solid #185FA5!important}
+.slot-label{font-size:9px;font-weight:500;color:#185FA5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 3px;line-height:14px}
+.cal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.25);display:flex;align-items:flex-start;justify-content:flex-end;padding:56px 16px 0 0;z-index:200}
+.cal-modal{background:#fff;border-radius:10px;border:1px solid #ddd;box-shadow:0 4px 20px rgba(0,0,0,0.15);padding:12px;width:240px}
+.cal-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.cal-header span{font-size:13px;font-weight:500;color:#333}
+.cal-nav{background:none;border:none;cursor:pointer;font-size:16px;color:#555;padding:2px 6px;border-radius:4px}
+.cal-nav:hover{background:#f0f0f0}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
+.cal-dow{font-size:10px;color:#999;text-align:center;padding:2px 0}
+.cal-dow.sat{color:#185FA5}
+.cal-dow.sun{color:#c0392b}
+.cal-day{font-size:11px;text-align:center;padding:4px 2px;border-radius:4px;cursor:pointer;color:#333;position:relative}
+.cal-day:hover{background:#E6F1FB}
+.cal-day.today{font-weight:700;color:#fff;background:#E67E22;border-radius:50%}
+.cal-day.selected{background:#185FA5;color:#fff!important;font-weight:700}
+.cal-day.selected:hover{background:#0C447C}
+.cal-day.sat{color:#185FA5}
+.cal-day.sun{color:#c0392b}
+.cal-day.other{color:#ccc}
+.cal-day.other.sat,.cal-day.other.sun{color:#ddd}
+.has-booking::after{content:'';position:absolute;bottom:2px;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:#EF9F27}
+.cal-day.selected.has-booking::after{background:#fff}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;z-index:100}
+.modal{background:#fff;border-radius:10px;border:1px solid #ddd;padding:1.25rem;width:300px;max-width:92vw;box-shadow:0 4px 20px rgba(0,0,0,0.15)}
+.modal h3{font-size:14px;font-weight:500;color:#333;margin-bottom:0.75rem}
+.time-row{display:flex;align-items:center;gap:8px;margin-bottom:0.75rem}
+.time-row label{font-size:12px;color:#666;width:36px;flex-shrink:0}
+.time-row select{flex:1;padding:6px 8px;font-size:13px;border:1px solid #ccc;border-radius:6px;background:#fff;color:#333}
+.time-row select:focus{outline:none;border-color:#185FA5}
+.name-row{margin-bottom:0.75rem}
+.name-row label{font-size:12px;color:#666;display:block;margin-bottom:4px}
+.name-row input{width:100%;padding:7px 10px;font-size:13px;border:1px solid #ccc;border-radius:6px;background:#fff;color:#333}
+.name-row input:focus{outline:none;border-color:#185FA5}
+.time-err{font-size:11px;color:#c0392b;margin-top:-0.5rem;margin-bottom:0.5rem;min-height:14px}
+.modal-btns{display:flex;gap:8px;justify-content:flex-end}
+.btn-cancel{background:#f0f0f0;border:1px solid #ccc;border-radius:6px;padding:6px 14px;cursor:pointer;font-size:12px;color:#555}
+.btn-ok{background:#185FA5;border:none;border-radius:6px;padding:6px 14px;cursor:pointer;font-size:12px;color:#fff;font-weight:500}
+.btn-del{background:#fdecea;border:none;border-radius:6px;padding:6px 14px;cursor:pointer;font-size:12px;color:#c0392b;font-weight:500}
+.btn-cancel:hover{background:#e0e0e0}
+.btn-ok:hover{background:#0C447C}
+.btn-del:hover{opacity:0.8}
+</style>
+</head>
+<body>
+<div class="header-row">
+  <h1>🏢 会議室予約表</h1>
+  <button class="cal-btn" onclick="openCalModal()">📅 カレンダーで選択</button>
+</div>
+<div class="toolbar">
+  <button class="nav-btn" onclick="moveDay(-1)">← 前日</button>
+  <span class="date-label" id="day-label"></span>
+  <button class="nav-btn" onclick="moveDay(1)">翌日 →</button>
+</div>
+<p class="hint">ドラッグで時間を選択 → ダイアログで時刻・名前を確認して登録。予約済みをクリックで編集・削除。</p>
+<div class="loading" id="loading"></div>
+<div class="table-wrap" id="table-wrap">
+  <table id="main-table">
+    <thead><tr id="hr"><th class="tc"></th></tr></thead>
+    <tbody id="body"></tbody>
+  </table>
+</div>
+
+<div class="cal-overlay" id="cal-overlay" style="display:none" onclick="onCalOverlayClick(event)">
+  <div class="cal-modal" id="cal-modal">
+    <div class="cal-header">
+      <button class="cal-nav" onclick="calMoveMonth(-1)">‹</button>
+      <span id="cal-month-label"></span>
+      <button class="cal-nav" onclick="calMoveMonth(1)">›</button>
+    </div>
+    <div class="cal-grid" id="cal-grid"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal" style="display:none">
+  <div class="modal">
+    <h3 id="modal-title"></h3>
+    <div class="time-row">
+      <label>開始</label>
+      <select id="sel-start" onchange="onTimeChange()"></select>
+    </div>
+    <div class="time-row">
+      <label>終了</label>
+      <select id="sel-end" onchange="onTimeChange()"></select>
+    </div>
+    <div class="time-err" id="time-err"></div>
+    <div class="name-row">
+      <label>名前 / 学籍番号</label>
+      <input type="text" id="modal-input" placeholder="例：中村、学籍番号" maxlength="20"/>
+    </div>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeModal()">キャンセル</button>
+      <button class="btn-del" id="btn-del" style="display:none" onclick="deleteBooking()">削除</button>
+      <button class="btn-ok" id="btn-ok" onclick="confirmModal()">登録</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// Supabase設定
+const SUPABASE_URL='https://brpehuimcehrhwknztyh.supabase.co';
+const SUPABASE_KEY='sb_publishable_CPqxSx_izryuRFyYaoGBBA_cMEX5cFj';
+const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+
+const ROOMS=[
+  'オフィスルーム\n（左手奥）',
+  'ミーティングルーム2\n（中央）',
+  'ミーティングルーム1\n（右）',
+  'ワーキングルーム'
+];
+const ROOMS_PLAIN=[
+  'オフィスルーム（左手奥）',
+  'ミーティングルーム2（中央）',
+  'ミーティングルーム1（右）',
+  'ワーキングルーム'
+];
+const DAYS=['月','火','水','木','金','土','日'];
+const START=7*60, END=21*60, STEP=10;
+
+let currentDay=new Date(); currentDay.setHours(0,0,0,0);
+let bookings={}; // ローカルキャッシュ
+let dragging=false, dragRi=-1, dragStartMin=-1, dragEndMin=-1;
+let calViewYear, calViewMonth;
+let realtimeChannel=null;
+
+function addDays(d,n){const r=new Date(d);r.setDate(r.getDate()+n);return r;}
+function fmt(d){const dow=DAYS[d.getDay()===0?6:d.getDay()-1];return d.getFullYear()+'/'+(d.getMonth()+1)+'/'+d.getDate()+' ('+dow+')';}
+function toDateMs(y,m,day){const d=new Date(y,m,day);d.setHours(0,0,0,0);return d.getTime();}
+function minToStr(m){return Math.floor(m/60)+':'+(m%60).toString().padStart(2,'0');}
+function setLoading(msg){document.getElementById('loading').textContent=msg||'';}
+
+function getBookingAt(ri,min){
+  const key=currentDay.getTime()+'_'+ri;
+  return(bookings[key]||[]).find(b=>min>=b.start_min&&min<b.end_min)||null;
+}
+function hasBookingOnDate(ms){
+  for(let ri=0;ri<ROOMS.length;ri++){
+    if((bookings[ms+'_'+ri]||[]).length>0)return true;
+  }
+  return false;
+}
+
+// Supabaseからデータ読み込み
+async function loadBookings(){
+  setLoading('読み込み中...');
+  const ms=currentDay.getTime();
+  const{data,error}=await sb.from('bookings').select('*').eq('date_ms',ms);
+  if(error){setLoading('読み込みエラー');return;}
+  // キャッシュ更新
+  for(let ri=0;ri<ROOMS.length;ri++)bookings[ms+'_'+ri]=[];
+  (data||[]).forEach(b=>{
+    const key=b.date_ms+'_'+b.room_index;
+    if(!bookings[key])bookings[key]=[];
+    bookings[key].push(b);
+  });
+  setLoading('');
+  buildTable();
+}
+
+// リアルタイム購読
+function setupRealtime(){
+  if(realtimeChannel)sb.removeChannel(realtimeChannel);
+  realtimeChannel=sb.channel('bookings-changes')
+    .on('postgres_changes',{event:'*',schema:'public',table:'bookings'},()=>{
+      loadBookings();
+    })
+    .subscribe();
+}
+
+async function saveBooking(ri,s,e,name){
+  setLoading('保存中...');
+  const{error}=await sb.from('bookings').insert({
+    date_ms:currentDay.getTime(),
+    room_index:ri,
+    start_min:s,
+    end_min:e,
+    name:name
+  });
+  if(error){setLoading('保存エラー: '+error.message);return false;}
+  setLoading('');
+  return true;
+}
+
+async function updateBooking(id,s,e,name){
+  setLoading('更新中...');
+  const{error}=await sb.from('bookings').update({start_min:s,end_min:e,name:name}).eq('id',id);
+  if(error){setLoading('更新エラー');return false;}
+  setLoading('');
+  return true;
+}
+
+async function deleteBookingById(id){
+  setLoading('削除中...');
+  const{error}=await sb.from('bookings').delete().eq('id',id);
+  if(error){setLoading('削除エラー');return false;}
+  setLoading('');
+  return true;
+}
+
+// カレンダー
+function openCalModal(){
+  calViewYear=currentDay.getFullYear();
+  calViewMonth=currentDay.getMonth();
+  buildCalGrid();
+  document.getElementById('cal-overlay').style.display='flex';
+}
+function closeCalModal(){document.getElementById('cal-overlay').style.display='none';}
+function onCalOverlayClick(e){if(e.target===document.getElementById('cal-overlay'))closeCalModal();}
+function calMoveMonth(dir){
+  calViewMonth+=dir;
+  if(calViewMonth<0){calViewMonth=11;calViewYear--;}
+  if(calViewMonth>11){calViewMonth=0;calViewYear++;}
+  buildCalGrid();
+}
+function buildCalGrid(){
+  document.getElementById('cal-month-label').textContent=calViewYear+'年'+(calViewMonth+1)+'月';
+  const grid=document.getElementById('cal-grid');
+  grid.innerHTML='';
+  const dowClass=['sun','','','','','','sat'];
+  ['日','月','火','水','木','金','土'].forEach((l,i)=>{
+    const d=document.createElement('div');
+    d.className='cal-dow '+(dowClass[i]||'');
+    d.textContent=l;grid.appendChild(d);
+  });
+  const first=new Date(calViewYear,calViewMonth,1).getDay();
+  const last=new Date(calViewYear,calViewMonth+1,0).getDate();
+  const today=new Date();today.setHours(0,0,0,0);
+  const prevLast=new Date(calViewYear,calViewMonth,0).getDate();
+  for(let i=0;i<first;i++){
+    const d=document.createElement('div');
+    d.className='cal-day other '+(i===0?'sun':i===6?'sat':'');
+    d.textContent=prevLast-first+1+i;grid.appendChild(d);
+  }
+  for(let day=1;day<=last;day++){
+    const dow=new Date(calViewYear,calViewMonth,day).getDay();
+    const ms=toDateMs(calViewYear,calViewMonth,day);
+    const isToday=ms===today.getTime();
+    const isSel=ms===currentDay.getTime();
+    const hasBook=hasBookingOnDate(ms);
+    const d=document.createElement('div');
+    let cls='cal-day';
+    if(dow===0)cls+=' sun';
+    if(dow===6)cls+=' sat';
+    if(isToday)cls+=' today';
+    if(isSel)cls+=' selected';
+    if(hasBook)cls+=' has-booking';
+    d.className=cls;
+    d.textContent=day;
+    d.addEventListener('click',(function(ms2){return function(){
+      const nd=new Date(ms2);nd.setHours(0,0,0,0);
+      currentDay=nd;
+      closeCalModal();
+      loadBookings();
+    };})(ms));
+    grid.appendChild(d);
+  }
+  const remaining=(7-((first+last)%7))%7;
+  for(let i=1;i<=remaining;i++){
+    const dow=new Date(calViewYear,calViewMonth+1,i).getDay();
+    const d=document.createElement('div');
+    d.className='cal-day other '+(dow===0?'sun':dow===6?'sat':'');
+    d.textContent=i;grid.appendChild(d);
+  }
+}
+
+function buildSelects(startVal,endVal){
+  const ss=document.getElementById('sel-start');
+  const se=document.getElementById('sel-end');
+  ss.innerHTML=''; se.innerHTML='';
+  for(let m=START;m<END;m+=STEP){
+    const o=document.createElement('option');o.value=m;o.textContent=minToStr(m);
+    if(m===startVal)o.selected=true;ss.appendChild(o);
+  }
+  for(let m=START+STEP;m<=END;m+=STEP){
+    const o=document.createElement('option');o.value=m;o.textContent=minToStr(m);
+    if(m===endVal)o.selected=true;se.appendChild(o);
+  }
+}
+
+function onTimeChange(){
+  const s=parseInt(document.getElementById('sel-start').value);
+  const e=parseInt(document.getElementById('sel-end').value);
+  const err=document.getElementById('time-err');
+  if(e<=s){err.textContent='終了は開始より後にしてください';return;}
+  const key=currentDay.getTime()+'_'+modalRi;
+  const list=(bookings[key]||[]).filter(b=>modalMode==='edit'?b.id!==modalBooking.id:true);
+  err.textContent=list.some(b=>s<b.end_min&&e>b.start_min)?'その時間帯はすでに予約があります':'';
+}
+
+function buildTable(){
+  const hr=document.getElementById('hr');
+  hr.innerHTML='<th class="tc"></th>';
+  ROOMS.forEach(r=>{
+    const th=document.createElement('th');th.className='dc';
+    th.innerHTML=r.replace('\n','<br>');hr.appendChild(th);
+  });
+  const body=document.getElementById('body');
+  body.innerHTML='';
+  for(let min=START;min<END;min+=STEP){
+    const tr=document.createElement('tr');
+    const td0=document.createElement('td');td0.className='tc';
+    td0.textContent=(min%60===0)?minToStr(min):'';
+    tr.appendChild(td0);
+    for(let ri=0;ri<ROOMS.length;ri++){
+      const td=document.createElement('td');
+      td.dataset.ri=ri;td.dataset.min=min;
+      const booking=getBookingAt(ri,min);
+      const sel=dragging&&dragRi===ri&&min>=Math.min(dragStartMin,dragEndMin)&&min<=Math.max(dragStartMin,dragEndMin);
+      let cls='slot ';
+      if(sel)cls+='selecting';
+      else if(booking)cls+='booked';
+      else cls+='free';
+      if(booking){
+        if(min===booking.start_min)cls+=' block-top';
+        if(min===booking.end_min-STEP)cls+=' block-bottom';
+        cls+=' block-side';
+      }
+      td.className=cls;
+      if(booking&&min===booking.start_min){
+        const sp=document.createElement('div');sp.className='slot-label';
+        sp.textContent=booking.name;td.appendChild(sp);
+      }
+      tr.appendChild(td);
+    }
+    body.appendChild(tr);
+  }
+  document.getElementById('day-label').textContent=fmt(currentDay);
+}
+
+const wrap=document.getElementById('table-wrap');
+function cellFromEl(el){
+  while(el&&el.tagName!=='TD')el=el.parentElement;
+  if(!el||el.dataset.ri===undefined)return null;
+  return{ri:parseInt(el.dataset.ri),min:parseInt(el.dataset.min)};
+}
+wrap.addEventListener('mousedown',e=>{
+  const c=cellFromEl(e.target);if(!c)return;
+  const b=getBookingAt(c.ri,c.min);
+  if(b){openEditModal(c.ri,b);return;}
+  dragging=true;dragRi=c.ri;dragStartMin=c.min;dragEndMin=c.min;
+  e.preventDefault();buildTable();
+});
+wrap.addEventListener('mousemove',e=>{
+  if(!dragging)return;
+  const c=cellFromEl(e.target);
+  if(!c||c.ri!==dragRi)return;
+  if(c.min!==dragEndMin){dragEndMin=c.min;buildTable();}
+});
+wrap.addEventListener('mouseleave',()=>{
+  if(dragging){const lo=Math.min(dragStartMin,dragEndMin),hi=Math.max(dragStartMin,dragEndMin)+STEP;dragging=false;openNewModal(dragRi,lo,hi);}
+});
+wrap.addEventListener('mouseup',e=>{
+  if(!dragging)return;
+  dragging=false;
+  const lo=Math.min(dragStartMin,dragEndMin),hi=Math.max(dragStartMin,dragEndMin)+STEP;
+  openNewModal(dragRi,lo,hi);
+});
+wrap.addEventListener('touchstart',e=>{
+  const t=e.touches[0];const el=document.elementFromPoint(t.clientX,t.clientY);
+  const c=cellFromEl(el);if(!c)return;
+  const b=getBookingAt(c.ri,c.min);
+  if(b){openEditModal(c.ri,b);return;}
+  e.preventDefault();
+  const lo=c.min,hi=Math.min(c.min+60,END);
+  openNewModal(c.ri,lo,hi);
+},{passive:false});
+wrap.addEventListener('touchmove',e=>{},{passive:true});
+wrap.addEventListener('touchend',e=>{});
+
+let modalMode=null,modalRi=-1,modalBooking=null;
+function openNewModal(ri,lo,hi){
+  modalMode='new';modalRi=ri;modalBooking=null;
+  document.getElementById('modal-title').textContent=ROOMS_PLAIN[ri]+' を予約';
+  buildSelects(lo,hi);
+  document.getElementById('modal-input').value='';
+  document.getElementById('btn-del').style.display='none';
+  document.getElementById('btn-ok').textContent='登録';
+  document.getElementById('time-err').textContent='';
+  document.getElementById('modal').style.display='flex';
+  setTimeout(()=>document.getElementById('modal-input').focus(),50);
+}
+function openEditModal(ri,booking){
+  modalMode='edit';modalRi=ri;modalBooking=booking;
+  document.getElementById('modal-title').textContent=ROOMS_PLAIN[ri]+'の予約を編集';
+  buildSelects(booking.start_min,booking.end_min);
+  document.getElementById('modal-input').value=booking.name;
+  document.getElementById('btn-del').style.display='';
+  document.getElementById('btn-ok').textContent='更新';
+  document.getElementById('time-err').textContent='';
+  document.getElementById('modal').style.display='flex';
+  setTimeout(()=>document.getElementById('modal-input').focus(),50);
+}
+function closeModal(){document.getElementById('modal').style.display='none';}
+async function confirmModal(){
+  const s=parseInt(document.getElementById('sel-start').value);
+  const e=parseInt(document.getElementById('sel-end').value);
+  const val=document.getElementById('modal-input').value.trim();
+  if(e<=s){document.getElementById('time-err').textContent='終了は開始より後にしてください';return;}
+  if(!val){document.getElementById('modal-input').focus();return;}
+  const key=currentDay.getTime()+'_'+modalRi;
+  const list=(bookings[key]||[]).filter(b=>modalMode==='edit'?b.id!==modalBooking.id:true);
+  if(list.some(b=>s<b.end_min&&e>b.start_min)){document.getElementById('time-err').textContent='その時間帯はすでに予約があります';return;}
+  closeModal();
+  if(modalMode==='new'){
+    await saveBooking(modalRi,s,e,val);
+  } else {
+    await updateBooking(modalBooking.id,s,e,val);
+  }
+  await loadBookings();
+}
+async function deleteBooking(){
+  closeModal();
+  await deleteBookingById(modalBooking.id);
+  await loadBookings();
+}
+document.getElementById('modal-input').addEventListener('keydown',e=>{
+  if(e.key==='Enter')confirmModal();
+  if(e.key==='Escape')closeModal();
+});
+document.getElementById('modal').addEventListener('click',e=>{if(e.target===document.getElementById('modal'))closeModal();});
+function moveDay(dir){currentDay=addDays(currentDay,dir);loadBookings();}
+
+// 初期化
+setupRealtime();
+loadBookings();
+</script>
+</body>
+</html>
