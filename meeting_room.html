@@ -333,27 +333,21 @@ wrap.addEventListener('mouseup',e=>{
   const lo=Math.min(dragStartMin,dragEndMin),hi=Math.max(dragStartMin,dragEndMin)+STEP;
   openNewModal(dragRi,lo,hi);
 });
+// スマホ：タップでダイアログを開く（ドラッグなし）
 wrap.addEventListener('touchstart',e=>{
   const t=e.touches[0];const el=document.elementFromPoint(t.clientX,t.clientY);
   const c=cellFromEl(el);if(!c)return;
   const b=getBookingAt(c.ri,c.min);
-  if(b){openEditModal(c.ri,b);return;}
-  dragging=true;dragRi=c.ri;dragStartMin=c.min;dragEndMin=c.min;
-  e.preventDefault();buildTable();
+  if(b){e.preventDefault();openEditModal(c.ri,b);return;}
+  // 空きセルをタップ → そのコマをデフォルト開始にしてダイアログを開く
+  e.preventDefault();
+  const lo=c.min, hi=Math.min(c.min+60,END);
+  openNewModal(c.ri,lo,hi);
 },{passive:false});
 wrap.addEventListener('touchmove',e=>{
-  if(!dragging)return;
-  const t=e.touches[0];const el=document.elementFromPoint(t.clientX,t.clientY);
-  const c=cellFromEl(el);if(!c||c.ri!==dragRi)return;
-  if(c.min!==dragEndMin){dragEndMin=c.min;buildTable();}
-  e.preventDefault();
-},{passive:false});
-wrap.addEventListener('touchend',e=>{
-  if(!dragging)return;
-  dragging=false;
-  const lo=Math.min(dragStartMin,dragEndMin),hi=Math.max(dragStartMin,dragEndMin)+STEP;
-  openNewModal(dragRi,lo,hi);
-});
+  // スマホはスクロールを妨げない
+},{passive:true});
+wrap.addEventListener('touchend',e=>{});
 
 let modalMode=null,modalRi=-1,modalBooking=null;
 function openNewModal(ri,lo,hi){
